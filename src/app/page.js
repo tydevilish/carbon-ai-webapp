@@ -19,16 +19,16 @@ const CLOTHES_CLASSES = [
 export default function CarbonDashboard() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const hiddenCanvasRef = useRef(null); // แอบสร้างผืนผ้าใบซ่อนไว้ให้ AI ดึงภาพไปคิด
+  const hiddenCanvasRef = useRef(null); 
   
   const [isLoaded, setIsLoaded] = useState(false);
   const [stableTotal, setStableTotal] = useState(0);
   const [stableItems, setStableItems] = useState([]);
 
   const modelRef = useRef(null);
-  const isDetecting = useRef(false); // เช็คว่า AI กำลังคิดอยู่ไหม
-  const latestBoxes = useRef([]); // เก็บกรอบล่าสุดที่ AI คิดเสร็จ
-  const historyBuffer = useRef([]); // กล่องความจำสำหรับระบบโหวต (กันกระพริบ)
+  const isDetecting = useRef(false); 
+  const latestBoxes = useRef([]); 
+  const historyBuffer = useRef([]); 
 
   useEffect(() => {
     const loadModel = async () => {
@@ -47,16 +47,17 @@ export default function CarbonDashboard() {
 
   const startWebcam = async () => {
     try {
-      // ขอเปิดกล้องความละเอียดสูง
+      // 🌟 เลิกบังคับขนาด 1280x720 ปล่อยให้มือถือเลือกขนาดที่ดีที่สุดของตัวเอง
+      // และตั้งค่า ideal: "environment" เพื่อพยายามใช้กล้องหลังก่อน
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 1280, height: 720, facingMode: "user" },
+        video: { facingMode: "environment" },
       });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.onloadedmetadata = () => {
           videoRef.current.play();
-          renderLoop(); // เริ่มลูปวาดภาพให้คนดู (60 FPS)
-          runAILoop();  // เริ่มลูปคิดเลขของ AI (แอบทำเบื้องหลัง)
+          renderLoop(); 
+          runAILoop();  
         };
       }
     } catch (error) {
@@ -65,22 +66,31 @@ export default function CarbonDashboard() {
   };
 
   // --------------------------------------------------------
-  // ลูปที่ 1: หน้าที่วาดภาพและกรอบให้สมูทที่สุด (ไม่รอ AI)
+  // ลูปที่ 1: วาดภาพกล้องให้ลื่นที่สุด 60FPS (แก้ภาพยืดตรงนี้)
   // --------------------------------------------------------
   const renderLoop = () => {
     if (!videoRef.current || !canvasRef.current) return;
     
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
 
-    // วาดภาพวิดีโอปัจจุบัน
+    // 🌟 ดึงขนาดดั้งเดิมของกล้องมือถือมาตั้งเป็นขนาด Canvas (แก้ภาพยืด 100%)
+    if (video.videoWidth && canvas.width !== video.videoWidth) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+    }
+
+    const ctx = canvas.getContext("2d");
+    if (canvas.width === 0) {
+       requestAnimationFrame(renderLoop);
+       return;
+    }
+
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // วาดกรอบจากข้อมูล "ล่าสุด" ที่ AI ส่งมาทิ้งไว้
     const boxes = latestBoxes.current;
     boxes.forEach(box => {
-      // คำนวณ Scale เพราะ AI คิดบนภาพ 640x640 แต่จอเราใหญ่กว่านั้น
+      // ปรับขนาดกรอบให้เข้ากับสัดส่วนกล้องจริง ไม่ใช่สัดส่วนสมมติ
       const scaleX = canvas.width / 640;
       const scaleY = canvas.height / 640;
       
@@ -89,11 +99,10 @@ export default function CarbonDashboard() {
       const w = box.w * scaleX;
       const h = box.h * scaleY;
 
-      ctx.strokeStyle = "#10b981"; // Emerald-500
-      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#10b981"; 
+      ctx.lineWidth = Math.max(2, canvas.width / 200); // ปรับเส้นหนาตามจอมือถือ
       ctx.strokeRect(x, y, w, h);
 
-      // ป้ายชื่อ
       ctx.fillStyle = "#10b981";
       ctx.fillRect(x, y - 30, ctx.measureText(box.item).width + 30, 30);
       ctx.fillStyle = "#000000";
@@ -105,13 +114,12 @@ export default function CarbonDashboard() {
   };
 
   // --------------------------------------------------------
-  // ลูปที่ 2: หน้าที่ AI ประมวลผลและระบบโหวต (แยกสมอง)
+  // ลูปที่ 2: AI คิดเลข (ใส่เบรกแก้กระตุก)
   // --------------------------------------------------------
   const runAILoop = async () => {
     if (!videoRef.current || !hiddenCanvasRef.current || !modelRef.current) return;
     
-    // ถ้า AI ยังคิดเฟรมเก่าไม่เสร็จ ให้ข้ามไปเลย กล้องจะได้ไม่ค้าง
-    if (isDetecting.current) {
+    if (isDetecting.current || videoRef.current.videoWidth === 0) {
         setTimeout(runAILoop, 10);
         return;
     }
@@ -123,7 +131,7 @@ export default function CarbonDashboard() {
       const hCanvas = hiddenCanvasRef.current;
       const hCtx = hCanvas.getContext("2d", { willReadFrequently: true });
 
-      // ดึงภาพมาย่อเหลือ 640x640 ให้ AI ดู
+      // ดึงภาพมาย่อให้ AI ดู
       hCtx.drawImage(video, 0, 0, 640, 640);
       const imageData = hCtx.getImageData(0, 0, 640, 640).data;
       const inputTensor = new Float32Array(1 * 3 * 640 * 640);
@@ -138,7 +146,7 @@ export default function CarbonDashboard() {
       const results = await modelRef.current.run({ images: tensor });
       const output = results[modelRef.current.outputNames[0]].data;
 
-      let currentItemsInFrame = new Set(["person"]); // มีคนเสมอ
+      let currentItemsInFrame = new Set(["person"]); 
       let newBoxes = [];
 
       for (let index = 0; index < 8400; index++) {
@@ -149,7 +157,7 @@ export default function CarbonDashboard() {
           if (conf > maxConf) { maxConf = conf; classId = c; }
         }
 
-        if (maxConf > 0.65) { // ปรับความเข้มงวดขึ้นนิดนึง
+        if (maxConf > 0.65) { 
           const xc = output[0 * 8400 + index];
           const yc = output[1 * 8400 + index];
           const w = output[2 * 8400 + index];
@@ -161,23 +169,18 @@ export default function CarbonDashboard() {
         }
       }
 
-      // ส่งกรอบไปให้ลูปวาดภาพ
       latestBoxes.current = newBoxes;
 
-      // 🌟 ระบบโหวต (Voting System) นิ่งกริ๊บ 🌟
-      // จำข้อมูลย้อนหลัง 15 เฟรม
       historyBuffer.current.push(Array.from(currentItemsInFrame));
       if (historyBuffer.current.length > 15) {
         historyBuffer.current.shift();
       }
 
-      // นับคะแนนโหวต
       const itemCounts = {};
       historyBuffer.current.flat().forEach(item => {
         itemCounts[item] = (itemCounts[item] || 0) + 1;
       });
 
-      // ถ้าของชิ้นไหนโผล่มาเกิน 5 โหวต (ประมาณ 1/3 ของความจำ) ถึงจะเชื่อว่าเป็นของจริง
       let stableItemsList = [];
       let calculatedCarbon = 0;
       
@@ -188,7 +191,6 @@ export default function CarbonDashboard() {
         }
       }
 
-      // อัปเดต UI ด้วยค่าที่นิ่งแล้ว
       setStableItems(stableItemsList);
       setStableTotal(calculatedCarbon);
 
@@ -196,22 +198,20 @@ export default function CarbonDashboard() {
       console.error(e);
     } finally {
       isDetecting.current = false;
-      // ให้ AI รันต่อทันทีที่พักหายใจเสร็จ
-      setTimeout(runAILoop, 0); 
+      // 🌟 ใส่เบรกแก้กระตุก! ให้เบราว์เซอร์พักหายใจ 100 มิลลิวินาที (ทำงาน ~10 FPS)
+      setTimeout(runAILoop, 100); 
     }
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-neutral-900 to-neutral-950 flex items-center justify-center p-4">
       
-      {/* ผืนผ้าใบซ่อนสำหรับ AI (จำเป็นต้องมีเพื่อไม่ให้กวนจอหลัก) */}
       <canvas ref={hiddenCanvasRef} width="640" height="640" className="hidden" />
       <video ref={videoRef} className="hidden" playsInline muted />
 
-      {/* กรอบ Main Container ใหญ่ๆ อันเดียว */}
-      <div className="w-full max-w-6xl bg-neutral-800/80 backdrop-blur-xl border border-neutral-700/50 rounded-[2rem] shadow-2xl p-6 flex flex-col lg:flex-row gap-6 relative overflow-hidden">
+      {/* กรอบ Main Container */}
+      <div className="w-full max-w-6xl bg-neutral-800/80 backdrop-blur-xl border border-neutral-700/50 rounded-[2rem] shadow-2xl p-4 md:p-6 flex flex-col lg:flex-row gap-6 relative overflow-hidden">
         
-        {/* Loading Overlay */}
         {!isLoaded && (
           <div className="absolute inset-0 z-50 bg-neutral-900/90 flex flex-col items-center justify-center">
             <div className="w-16 h-16 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mb-4"></div>
@@ -219,37 +219,28 @@ export default function CarbonDashboard() {
           </div>
         )}
 
-        {/* โซนกล้องใหญ่ (ซ้าย) */}
-        <div className="flex-1 bg-black rounded-2xl overflow-hidden relative shadow-inner border border-neutral-700">
+        {/* 🌟 โซนกล้อง (เปลี่ยน CSS เป็น object-cover เพื่อให้สวยงามไม่ว่าจะจอคอมหรือมือถือ) */}
+        <div className="flex-1 bg-black rounded-2xl overflow-hidden relative shadow-inner border border-neutral-700 min-h-[50vh] md:min-h-[60vh]">
           <canvas 
             ref={canvasRef} 
-            width="1280" 
-            height="720" 
             className="w-full h-full object-cover"
           />
-          {/* ป้ายบอกสถานะมุมซ้ายบนของกล้อง */}
           <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full border border-neutral-600 flex items-center gap-2">
             <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></div>
             <span className="text-sm font-medium text-gray-200 uppercase tracking-widest">Live Scan</span>
           </div>
         </div>
 
-        {/* โซน Dashboard (ขวา) แบบเรียบหรู */}
+        {/* โซน Dashboard (ขวา) */}
         <div className="w-full lg:w-[380px] flex flex-col gap-4">
-          
-          <div className="mb-4 px-2">
-            <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-teal-300">
+          <div className="mb-2 px-2 text-center lg:text-left">
+            <h1 className="text-3xl md:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-teal-300 tracking-wide">
               CarbonLens AI
             </h1>
             <p className="text-neutral-400 text-sm mt-1">Real-time footprint estimation</p>
           </div>
 
-          {/* การ์ด Total */}
           <div className="bg-gradient-to-br from-emerald-900/40 to-teal-900/20 p-6 rounded-2xl border border-emerald-500/20 shadow-lg relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-4 opacity-10 text-emerald-500">
-              {/* ไอคอนใบไม้ตกแต่ง */}
-              <svg width="60" height="60" viewBox="0 0 24 24" fill="currentColor"><path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3C21,5 14,5.25 9,6.25C4,7.25 7.03,11.54 7.64,12.5C8.7,14.24 10.83,14.9 12.06,15.07L13.56,11.53C12.39,11.23 11.26,10.63 10.35,9.75L11.75,8.33C12.44,9.05 13.31,9.54 14.27,9.78L15.34,7.29C14.54,7.06 13.8,6.64 13.19,6.05L14.61,4.64C15.93,5.92 17.78,6.59 19.66,6.44L20.5,8.41C19.3,8.58 18.11,8.44 17,8Z" /></svg>
-            </div>
             <h2 className="text-emerald-300/80 text-sm font-semibold uppercase tracking-wider mb-1">Total Impact</h2>
             <div className="flex items-baseline gap-2">
               <span className="text-6xl font-black text-emerald-400 tabular-nums">
@@ -259,8 +250,7 @@ export default function CarbonDashboard() {
             </div>
           </div>
 
-          {/* การ์ด Items */}
-          <div className="bg-neutral-800/50 p-6 rounded-2xl border border-neutral-700/50 flex-1 overflow-y-auto max-h-[400px] scrollbar-thin scrollbar-thumb-neutral-600">
+          <div className="bg-neutral-800/50 p-6 rounded-2xl border border-neutral-700/50 flex-1 overflow-y-auto max-h-[300px] md:max-h-[400px] scrollbar-thin scrollbar-thumb-neutral-600">
             <h2 className="text-neutral-400 text-sm font-semibold uppercase tracking-wider mb-4">Detected Items</h2>
             
             {stableItems.length === 0 ? (
@@ -280,7 +270,6 @@ export default function CarbonDashboard() {
               </ul>
             )}
           </div>
-
         </div>
       </div>
     </div>
