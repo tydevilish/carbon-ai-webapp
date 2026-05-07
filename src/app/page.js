@@ -42,35 +42,44 @@ export default function CarbonDashboard() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [stableTotal, setStableTotal] = useState(0);
   const [stableItems, setStableItems] = useState([]);
+  const [facingMode, setFacingMode] = useState("environment");
 
-  // 🌟 State สำหรับสลับกล้องหน้า/หลัง
-  const [facingMode, setFacingMode] = useState("environment"); // เริ่มต้นด้วยกล้องหลัง
+  // 🌟 เพิ่มตัวแปรสำหรับเก็บสมองจับคน (Pose Model)
+  const clothesModelRef = useRef(null);
+  const poseModelRef = useRef(null);
 
-  const modelRef = useRef(null);
   const isDetecting = useRef(false);
   const latestBoxes = useRef([]);
   const historyBuffer = useRef([]);
 
-  // โหลดโมเดลแค่ครั้งแรก
   useEffect(() => {
-    const loadModel = async () => {
+    const loadModels = async () => {
       try {
-        // เพิ่ม webgl เพื่อพยายามใช้การ์ดจอมือถือ (ถ้ามี) จะทำให้เร็วกว่าเดิมมาก
-        modelRef.current = await ort.InferenceSession.create(
+        // 🌟 โหลด AI 2 ตัวพร้อมกัน
+        clothesModelRef.current = await ort.InferenceSession.create(
           "/models/best.onnx",
           {
             executionProviders: ["webgl", "wasm"],
           },
         );
+        poseModelRef.current = await ort.InferenceSession.create(
+          "/models/yolo11n-pose.onnx",
+          {
+            executionProviders: ["webgl", "wasm"],
+          },
+        );
+
         setIsLoaded(true);
       } catch (error) {
-        console.error("โหลดโมเดลไม่สำเร็จ:", error);
+        console.error(
+          "โหลดโมเดลไม่สำเร็จ (เช็คไฟล์ yolo11n-pose.onnx):",
+          error,
+        );
       }
     };
-    loadModel();
+    loadModels();
   }, []);
 
-  // 🌟 เปิดกล้องใหม่ทุกครั้งที่ค่า facingMode เปลี่ยน
   useEffect(() => {
     if (isLoaded) {
       startWebcam();
@@ -79,16 +88,12 @@ export default function CarbonDashboard() {
 
   const startWebcam = async () => {
     try {
-      // 1. ปิดกล้องเก่าก่อน (เพื่อไม่ให้ค้างตอนสลับกล้อง)
       if (videoRef.current && videoRef.current.srcObject) {
         videoRef.current.srcObject.getTracks().forEach((track) => track.stop());
       }
-
-      // 2. ขอเปิดกล้องตามโหมดหน้า/หลัง
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: facingMode },
       });
-
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.onloadedmetadata = () => {
@@ -98,19 +103,14 @@ export default function CarbonDashboard() {
         };
       }
     } catch (error) {
-      console.error(error);
-      alert("ไม่สามารถเข้าถึงกล้องได้ กรุณาตรวจสอบสิทธิ์การใช้งานครับ");
+      alert("ไม่สามารถเข้าถึงกล้องได้ครับ");
     }
   };
 
-  // 🌟 ฟังก์ชันสลับกล้อง
   const toggleCamera = () => {
     setFacingMode((prev) => (prev === "user" ? "environment" : "user"));
   };
 
-  // --------------------------------------------------------
-  // ลูปที่ 1: วาด "แผ่นกระจกใส" ทับวิดีโอ (คืนความลื่นไหลให้มือถือ)
-  // --------------------------------------------------------
   const renderLoop = () => {
     if (!videoRef.current || !canvasRef.current) return;
 
@@ -122,34 +122,32 @@ export default function CarbonDashboard() {
       return;
     }
 
-    // เซ็ตขนาดกระจกใสให้เท่ากับขนาดวิดีโอเป๊ะๆ
     if (canvas.width !== video.videoWidth) {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
     }
 
     const ctx = canvas.getContext("2d");
-
-    // 🌟 เคลียร์กระจกใสให้สะอาดทุกเฟรม (ไม่ได้ลอกภาพจากวิดีโอแล้ว ปล่อย HTML5 ทำงานแทน)
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const boxes = latestBoxes.current;
     boxes.forEach((box) => {
       const scaleX = canvas.width / 640;
       const scaleY = canvas.height / 640;
-
       const x = box.x1 * scaleX;
       const y = box.y1 * scaleY;
       const w = box.w * scaleX;
       const h = box.h * scaleY;
 
-      // วาดกล่องเขียว
-      ctx.strokeStyle = "#10b981";
+      // 🌟 ถ้าเป็นกล่องคน (person) ให้วาดเป็นสีเหลืองทอง จะได้แยกจากเสื้อผ้าชัดเจน
+      const isPerson = box.item === "person";
+      const boxColor = isPerson ? "#eab308" : "#10b981";
+
+      ctx.strokeStyle = boxColor;
       ctx.lineWidth = Math.max(3, canvas.width / 200);
       ctx.strokeRect(x, y, w, h);
 
-      // วาดป้ายชื่อ
-      ctx.fillStyle = "#10b981";
+      ctx.fillStyle = boxColor;
       ctx.fillRect(x, y - 30, ctx.measureText(box.item).width + 30, 30);
       ctx.fillStyle = "#000000";
       ctx.font = "600 18px 'Kanit'";
@@ -159,11 +157,13 @@ export default function CarbonDashboard() {
     requestAnimationFrame(renderLoop);
   };
 
-  // --------------------------------------------------------
-  // ลูปที่ 2: แอบเอาภาพส่งให้ AI (รันแบบชิลๆ เบื้องหลัง)
-  // --------------------------------------------------------
   const runAILoop = async () => {
-    if (!videoRef.current || !hiddenCanvasRef.current || !modelRef.current)
+    if (
+      !videoRef.current ||
+      !hiddenCanvasRef.current ||
+      !clothesModelRef.current ||
+      !poseModelRef.current
+    )
       return;
 
     if (isDetecting.current || videoRef.current.videoWidth === 0) {
@@ -189,17 +189,55 @@ export default function CarbonDashboard() {
       }
 
       const tensor = new ort.Tensor("float32", inputTensor, [1, 3, 640, 640]);
-      const results = await modelRef.current.run({ images: tensor });
-      const output = results[modelRef.current.outputNames[0]].data;
 
-      let currentItemsInFrame = new Set(["person"]);
+      // 🌟 สั่ง AI ทั้ง 2 ตัวทำงานด้วยภาพเดียวกัน
+      const resultsClothes = await clothesModelRef.current.run({
+        images: tensor,
+      });
+      const resultsPose = await poseModelRef.current.run({ images: tensor });
+
+      const outClothes =
+        resultsClothes[clothesModelRef.current.outputNames[0]].data;
+      const outPose = resultsPose[poseModelRef.current.outputNames[0]].data;
+
+      let currentItemsInFrame = new Set();
       let newBoxes = [];
 
+      // --- 1. อ่านผลลัพธ์การจับคน (จาก Pose Model) ---
+      let bestPersonConf = 0;
+      let bestPersonBox = null;
+
+      for (let index = 0; index < 8400; index++) {
+        const conf = outPose[4 * 8400 + index]; // ค่าความมั่นใจของคลาส Person
+        if (conf > bestPersonConf) {
+          bestPersonConf = conf;
+          bestPersonBox = {
+            xc: outPose[0 * 8400 + index],
+            yc: outPose[1 * 8400 + index],
+            w: outPose[2 * 8400 + index],
+            h: outPose[3 * 8400 + index],
+          };
+        }
+      }
+
+      // ถ้ามั่นใจเกิน 65% ว่ามีคนจริงๆ ให้วาดกรอบคน
+      if (bestPersonConf > 0.65 && bestPersonBox) {
+        currentItemsInFrame.add("person");
+        newBoxes.push({
+          item: "person",
+          x1: bestPersonBox.xc - bestPersonBox.w / 2,
+          y1: bestPersonBox.yc - bestPersonBox.h / 2,
+          w: bestPersonBox.w,
+          h: bestPersonBox.h,
+        });
+      }
+
+      // --- 2. อ่านผลลัพธ์การจับเสื้อผ้า (จาก Clothes Model) ---
       for (let index = 0; index < 8400; index++) {
         let maxConf = 0;
         let classId = -1;
         for (let c = 0; c < 12; c++) {
-          const conf = output[(c + 4) * 8400 + index];
+          const conf = outClothes[(c + 4) * 8400 + index];
           if (conf > maxConf) {
             maxConf = conf;
             classId = c;
@@ -207,10 +245,10 @@ export default function CarbonDashboard() {
         }
 
         if (maxConf > 0.65) {
-          const xc = output[0 * 8400 + index];
-          const yc = output[1 * 8400 + index];
-          const w = output[2 * 8400 + index];
-          const h = output[3 * 8400 + index];
+          const xc = outClothes[0 * 8400 + index];
+          const yc = outClothes[1 * 8400 + index];
+          const w = outClothes[2 * 8400 + index];
+          const h = outClothes[3 * 8400 + index];
 
           const itemName = CLOTHES_CLASSES[classId];
           currentItemsInFrame.add(itemName);
@@ -226,6 +264,7 @@ export default function CarbonDashboard() {
 
       latestBoxes.current = newBoxes;
 
+      // ระบบโหวตนิ่งๆ (เหมือนเดิม)
       historyBuffer.current.push(Array.from(currentItemsInFrame));
       if (historyBuffer.current.length > 15) historyBuffer.current.shift();
 
@@ -250,13 +289,13 @@ export default function CarbonDashboard() {
       console.error(e);
     } finally {
       isDetecting.current = false;
-      setTimeout(runAILoop, 100);
+      // 🌟 เพื่อไม่ให้มือถือค้าง ผมตั้งหน่วงเวลา AI เป็น 150ms ให้มือถือได้หายใจ
+      setTimeout(runAILoop, 150);
     }
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-neutral-900 to-neutral-950 flex items-center justify-center p-4">
-      {/* Canvas ลับให้ AI แอบดึงภาพ (ขนาด 640x640) */}
       <canvas
         ref={hiddenCanvasRef}
         width="640"
@@ -264,34 +303,28 @@ export default function CarbonDashboard() {
         className="hidden"
       />
 
-      {/* กรอบ Main Container */}
       <div className="w-full max-w-6xl bg-neutral-800/80 backdrop-blur-xl border border-neutral-700/50 rounded-[2rem] shadow-2xl p-4 md:p-6 flex flex-col lg:flex-row gap-6 relative overflow-hidden">
         {!isLoaded && (
           <div className="absolute inset-0 z-50 bg-neutral-900/90 flex flex-col items-center justify-center">
             <div className="w-16 h-16 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mb-4"></div>
             <h2 className="text-2xl font-semibold text-emerald-400">
-              เตรียมระบบ AI...
+              เตรียมระบบ AI คู่...
             </h2>
           </div>
         )}
 
-        {/* โซนกล้อง (เปลี่ยนโครงสร้างใหม่ทั้งหมด!) */}
         <div className="flex-1 bg-black rounded-2xl overflow-hidden relative shadow-inner border border-neutral-700 min-h-[50vh] md:min-h-[60vh] flex">
-          {/* 1. วิดีโอสดเล่นอยู่ข้างล่างสุด (ลื่นไหล 100%) */}
           <video
             ref={videoRef}
             className="absolute inset-0 w-full h-full object-cover"
             playsInline
             muted
           />
-
-          {/* 2. กระจกใสสำหรับวาดกรอบแปะทับ (ขนาดพอดีเป๊ะ) */}
           <canvas
             ref={canvasRef}
             className="absolute inset-0 w-full h-full object-cover z-10"
           />
 
-          {/* ป้ายบอกสถานะ */}
           <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full border border-neutral-600 flex items-center gap-2 z-20">
             <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></div>
             <span className="text-sm font-medium text-gray-200 uppercase tracking-widest">
@@ -299,7 +332,6 @@ export default function CarbonDashboard() {
             </span>
           </div>
 
-          {/* 🌟 ปุ่มกดสลับกล้องหน้า-หลัง (อยู่มุมขวาบน) */}
           <button
             onClick={toggleCamera}
             className="absolute top-4 right-4 bg-neutral-900/70 hover:bg-emerald-600 backdrop-blur-md p-3 rounded-full border border-neutral-600 transition-colors z-20 shadow-lg"
@@ -324,7 +356,6 @@ export default function CarbonDashboard() {
           </button>
         </div>
 
-        {/* โซน Dashboard (ขวา) */}
         <div className="w-full lg:w-[380px] flex flex-col gap-4">
           <div className="mb-2 px-2 text-center lg:text-left">
             <h1 className="text-3xl md:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-teal-300 tracking-wide">
@@ -356,7 +387,7 @@ export default function CarbonDashboard() {
 
             {stableItems.length === 0 ? (
               <div className="text-center py-8 text-neutral-500 italic">
-                กำลังวิเคราะห์เสื้อผ้า...
+                ไม่พบสิ่งของในกล้อง...
               </div>
             ) : (
               <ul className="flex flex-col gap-3">
