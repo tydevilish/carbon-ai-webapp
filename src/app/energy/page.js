@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Zap, Droplet, Trash2, Cloud, Coins } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend,
@@ -57,14 +58,17 @@ export default function EnergyPage() {
   return (
     <>
       <div className="page-title-bar">
-        <h2>⚡ Energy Usage Analysis</h2>
+        <h2 style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <Zap size={24} className="text-yellow-500" />
+          Energy Usage Analysis
+        </h2>
         <p>Monitor electricity, water, and waste consumption with CO₂ impact</p>
       </div>
 
       {/* Summary Stats */}
       <div className="stats-grid">
         <div className="stat-card">
-          <div className="stat-icon stat-icon-yellow"><span>⚡</span></div>
+          <div className="stat-icon stat-icon-yellow"><Zap size={20} /></div>
           <div className="stat-content">
             <div className="stat-value-row">
               <span className="stat-value">{totals.electricity.toLocaleString()}</span>
@@ -74,7 +78,7 @@ export default function EnergyPage() {
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon stat-icon-cyan"><span>💧</span></div>
+          <div className="stat-icon stat-icon-cyan"><Droplet size={20} /></div>
           <div className="stat-content">
             <div className="stat-value-row">
               <span className="stat-value">{totals.water.toLocaleString()}</span>
@@ -84,7 +88,7 @@ export default function EnergyPage() {
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon stat-icon-red"><span>🗑️</span></div>
+          <div className="stat-icon stat-icon-red"><Trash2 size={20} /></div>
           <div className="stat-content">
             <div className="stat-value-row">
               <span className="stat-value">{totals.waste.toLocaleString()}</span>
@@ -94,7 +98,7 @@ export default function EnergyPage() {
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon stat-icon-green"><span>☁️</span></div>
+          <div className="stat-icon stat-icon-green"><Cloud size={20} /></div>
           <div className="stat-content">
             <div className="stat-value-row">
               <span className="stat-value">{totalCO2.toFixed(0)}</span>
@@ -163,7 +167,10 @@ export default function EnergyPage() {
       {/* Cost Breakdown */}
       <div className="widget-card" style={{ marginTop: "16px" }}>
         <div className="widget-header">
-          <h3 className="widget-title">💰 Cost Breakdown (30 Days)</h3>
+          <h3 className="widget-title" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <Coins size={18} />
+            Cost Breakdown (30 Days)
+          </h3>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px" }}>
           <div style={{ padding: "16px", background: "var(--bg-primary)", borderRadius: "12px", textAlign: "center" }}>

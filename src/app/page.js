@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Cloud, Zap, Car, Coins } from "lucide-react";
 import StatCard from "@/components/dashboard/StatCard";
 import EmissionsChart from "@/components/dashboard/EmissionsChart";
 import BreakdownDonut from "@/components/dashboard/BreakdownDonut";
@@ -70,7 +71,7 @@ export default function DashboardPage() {
       {/* Summary Stats */}
       <div className="stats-grid">
         <StatCard
-          icon={<span>☁️</span>}
+          icon={<Cloud size={20} />}
           value={summary.totalCO2}
           unit="kg CO₂"
           label="Total"
@@ -78,7 +79,7 @@ export default function DashboardPage() {
           color="blue"
         />
         <StatCard
-          icon={<span>⚡</span>}
+          icon={<Zap size={20} />}
           value={summary.energyUse.toLocaleString()}
           unit="kWh"
           label="Energy Use"
@@ -86,7 +87,7 @@ export default function DashboardPage() {
           color="yellow"
         />
         <StatCard
-          icon={<span>🚗</span>}
+          icon={<Car size={20} />}
           value={summary.vehicleEntries.toLocaleString()}
           unit="entries"
           label="Vehicle Entries"
@@ -94,7 +95,7 @@ export default function DashboardPage() {
           color="green"
         />
         <StatCard
-          icon={<span>💰</span>}
+          icon={<Coins size={20} />}
           value={summary.estimatedCost.toLocaleString()}
           unit="฿"
           label="Estimated Cost"

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Car, User, CameraOff } from "lucide-react";
 import * as ort from "onnxruntime-web";
 import {
   CARBON_DB, CLASS_NAMES, VEHICLE_CLASSES, CLOTHES_CLASSES,
@@ -51,6 +52,7 @@ export default function VehiclesPage() {
   const [currentTrackedItems, setCurrentTrackedItems] = useState([]);
   const [facingMode, setFacingMode] = useState("environment");
   const [vehicleLog, setVehicleLog] = useState([]);
+  const [cameraError, setCameraError] = useState(false);
 
   const modelRef = useRef(null);
   const isDetecting = useRef(false);
@@ -82,6 +84,7 @@ export default function VehiclesPage() {
 
   const startWebcam = async () => {
     try {
+      setCameraError(false);
       if (videoRef.current && videoRef.current.srcObject) {
         videoRef.current.srcObject.getTracks().forEach((track) => track.stop());
       }
@@ -97,7 +100,8 @@ export default function VehiclesPage() {
         };
       }
     } catch (error) {
-      console.warn("Camera not accessible");
+      console.warn("Camera not accessible", error);
+      setCameraError(true);
     }
   };
 
@@ -160,7 +164,7 @@ export default function VehiclesPage() {
       ctx.strokeRect(x, y, w, h);
 
       const itemsList = target.items.length > 0 ? ` [${target.items.join(",")}]` : "";
-      const text = `${isVehicle ? "🚗" : "👤"} ID#${target.id} ${target.item} (+${target.carbon.toFixed(1)})${itemsList}`;
+      const text = `${target.item.toUpperCase()} ID#${target.id} (+${target.carbon.toFixed(1)})${itemsList}`;
 
       ctx.fillStyle = color;
       ctx.fillRect(x, y - 30, ctx.measureText(text).width + 20, 30);
@@ -324,7 +328,10 @@ export default function VehiclesPage() {
   return (
     <>
       <div className="page-title-bar">
-        <h2>🚗 Vehicles & Camera Detection</h2>
+        <h2 style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <Car size={24} className="text-blue-500" />
+          Vehicles & Camera Detection
+        </h2>
         <p>Live AI-powered detection system with real-time carbon tracking</p>
       </div>
 
@@ -333,10 +340,29 @@ export default function VehiclesPage() {
       <div className="camera-page-layout">
         {/* Camera View */}
         <div className="camera-view">
-          {!isLoaded && (
+          {!isLoaded && !cameraError && (
             <div className="loading-overlay" style={{ position: "absolute", borderRadius: "16px" }}>
               <div className="loading-spinner" />
               <p className="loading-text">Loading AI Model...</p>
+            </div>
+          )}
+          {cameraError && (
+            <div className="loading-overlay" style={{
+              position: "absolute",
+              borderRadius: "16px",
+              background: "rgba(15, 23, 42, 0.95)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+              padding: "24px",
+              textAlign: "center",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 5
+            }}>
+              <CameraOff size={40} className="text-red-500" style={{ color: "#ef4444" }} />
+              <p className="loading-text" style={{ margin: 0, fontWeight: "600", fontSize: "16px", color: "#f1f5f9" }}>ไม่พบกล้องในขณะนี้</p>
+              <p style={{ fontSize: "12px", color: "#94a3b8", margin: 0 }}>โปรดตรวจสอบการเชื่อมต่อกล้องหรืออนุญาตสิทธิ์การเข้าถึงกล้อง</p>
             </div>
           )}
           <video ref={videoRef} playsInline muted />
@@ -390,9 +416,10 @@ export default function VehiclesPage() {
                   return (
                     <div key={usr.id} className="detection-item">
                       <div className="detection-main">
-                        <span className={`detection-id ${isVehicle ? "detection-vehicle" : "detection-person"}`}>
-                          {isVehicle ? "🚗" : "👤"} ID #{usr.id}
-                          <span style={{ fontSize: "11px", color: "#94a3b8", marginLeft: "6px", textTransform: "capitalize" }}>({usr.item})</span>
+                        <span className={`detection-id ${isVehicle ? "detection-vehicle" : "detection-person"}`} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          {isVehicle ? <Car size={14} /> : <User size={14} />}
+                          ID #{usr.id}
+                          <span style={{ fontSize: "11px", color: "#94a3b8", textTransform: "capitalize" }}>({usr.item})</span>
                         </span>
                         <span className="detection-carbon">+{usr.carbon.toFixed(1)} kg</span>
                       </div>

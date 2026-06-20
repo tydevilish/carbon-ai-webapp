@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { BarChart3, TrendingUp, Coins, Sprout } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, ComposedChart,
@@ -23,14 +24,17 @@ export default function ReportsPage() {
   return (
     <>
       <div className="page-title-bar">
-        <h2>📊 Reports & Summary</h2>
+        <h2 style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <BarChart3 size={24} className="text-blue-500" />
+          Reports & Summary
+        </h2>
         <p>Monthly carbon footprint reports and reduction recommendations</p>
       </div>
 
       {/* Summary */}
       <div className="stats-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
         <div className="stat-card">
-          <div className="stat-icon stat-icon-blue"><span>📊</span></div>
+          <div className="stat-icon stat-icon-blue"><BarChart3 size={20} /></div>
           <div className="stat-content">
             <div className="stat-value-row">
               <span className="stat-value">{totalCO2.toLocaleString()}</span>
@@ -40,7 +44,7 @@ export default function ReportsPage() {
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon stat-icon-yellow"><span>📈</span></div>
+          <div className="stat-icon stat-icon-yellow"><TrendingUp size={20} /></div>
           <div className="stat-content">
             <div className="stat-value-row">
               <span className="stat-value">{avgCO2.toFixed(0)}</span>
@@ -50,7 +54,7 @@ export default function ReportsPage() {
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon stat-icon-green"><span>💰</span></div>
+          <div className="stat-icon stat-icon-green"><Coins size={20} /></div>
           <div className="stat-content">
             <div className="stat-value-row">
               <span className="stat-value">{totalCost.toLocaleString()}</span>
@@ -91,7 +95,10 @@ export default function ReportsPage() {
         {/* Tips & Recommendations */}
         <div className="widget-card">
           <div className="widget-header">
-            <h3 className="widget-title">🌱 Recommendations for Reducing Carbon</h3>
+            <h3 className="widget-title" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <Sprout size={18} />
+              Recommendations for Reducing Carbon
+            </h3>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             {tips.map((tip, i) => (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Cloud, BarChart3, TrendingUp, Factory, ClipboardList } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
   AreaChart, Area,
@@ -32,14 +33,17 @@ export default function EmissionsPage() {
   return (
     <>
       <div className="page-title-bar">
-        <h2>☁️ CO₂ Emissions Analysis</h2>
+        <h2 style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <Cloud size={24} className="text-blue-500" />
+          CO₂ Emissions Analysis
+        </h2>
         <p>Detailed breakdown of carbon emissions from all sources</p>
       </div>
 
       {/* Summary Stats */}
       <div className="stats-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
         <div className="stat-card">
-          <div className="stat-icon stat-icon-blue"><span>📊</span></div>
+          <div className="stat-icon stat-icon-blue"><BarChart3 size={20} /></div>
           <div className="stat-content">
             <div className="stat-value-row">
               <span className="stat-value">{totalCO2.toFixed(0)}</span>
@@ -49,7 +53,7 @@ export default function EmissionsPage() {
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon stat-icon-yellow"><span>📈</span></div>
+          <div className="stat-icon stat-icon-yellow"><TrendingUp size={20} /></div>
           <div className="stat-content">
             <div className="stat-value-row">
               <span className="stat-value">{avgCO2.toFixed(1)}</span>
@@ -59,7 +63,7 @@ export default function EmissionsPage() {
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon stat-icon-green"><span>🏭</span></div>
+          <div className="stat-icon stat-icon-green"><Factory size={20} /></div>
           <div className="stat-content">
             <div className="stat-value-row">
               <span className="stat-value">{EMISSION_FACTORS.electricity}</span>
@@ -144,7 +148,10 @@ export default function EmissionsPage() {
       {/* Emission Factors Reference */}
       <div className="widget-card" style={{ marginTop: "20px" }}>
         <div className="widget-header">
-          <h3 className="widget-title">📋 Emission Factors Reference (TGO 2023)</h3>
+          <h3 className="widget-title" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <ClipboardList size={18} />
+            Emission Factors Reference (TGO 2023)
+          </h3>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px" }}>
           <div style={{ padding: "12px", background: "var(--bg-primary)", borderRadius: "8px" }}>
