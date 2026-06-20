@@ -3,7 +3,7 @@ import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 
 export const metadata = {
-  title: "Carbon Footprint By IT",
+  title: "@carbon_Footprint",
   description: "Real-time Carbon Footprint Monitoring & Analysis System powered by AI detection and Supabase",
 };
 

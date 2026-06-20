@@ -7,9 +7,6 @@ export default function Header({ title = "Dashboard" }) {
     <header className="page-header">
       <div className="header-left">
         <h1 className="header-title">
-          <span className="header-icon" style={{ display: "inline-flex", alignItems: "center" }}>
-            <Cloud size={20} />
-          </span>
           Carbon Footprint Monitoring Dashboard
         </h1>
       </div>
