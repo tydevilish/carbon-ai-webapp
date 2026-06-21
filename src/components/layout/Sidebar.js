@@ -20,12 +20,12 @@ export default function Sidebar() {
     <aside className="sidebar">
       {/* Logo */}
       <div className="sidebar-logo">
-        <div className="sidebar-logo-icon" style={{ display: "inline-flex", alignItems: "center", color: "#10b981" }}>
-          <Leaf size={24} />
+        <div className="sidebar-logo-icon" style={{ display: "inline-flex", alignItems: "center", background: "#ffffff", padding: "4px", borderRadius: "8px" }}>
+          <img src="/logo_itcmtc_1.png" alt="ITCMTC Logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
         </div>
         <div className="sidebar-logo-text">
-          <span className="sidebar-title">CarbonLens</span>
-          <span className="sidebar-subtitle">AI Monitoring</span>
+          <span className="sidebar-title">IT Department</span>
+          <span className="sidebar-subtitle">MTC CarbonLens</span>
         </div>
       </div>
 
