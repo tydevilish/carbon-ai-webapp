@@ -6,15 +6,22 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, ComposedChart,
 } from "recharts";
-import { getMockMonthlySummary, getMockTips } from "@/lib/mock-data";
+import { fetchMonthlySummary, fetchTips } from "@/lib/supabase-queries";
 
 export default function ReportsPage() {
   const [monthlySummary, setMonthlySummary] = useState([]);
   const [tips, setTips] = useState([]);
 
   useEffect(() => {
-    setMonthlySummary(getMockMonthlySummary());
-    setTips(getMockTips());
+    async function loadData() {
+      const [monthly, tipsData] = await Promise.all([
+        fetchMonthlySummary(),
+        Promise.resolve(fetchTips()),
+      ]);
+      setMonthlySummary(monthly);
+      setTips(tipsData);
+    }
+    loadData();
   }, []);
 
   const totalCO2 = monthlySummary.reduce((sum, m) => sum + m.co2, 0);

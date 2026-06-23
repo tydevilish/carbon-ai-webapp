@@ -6,7 +6,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
   AreaChart, Area,
 } from "recharts";
-import { getMockEmissionsTable, getMockEmissionsWeekly } from "@/lib/mock-data";
+import { fetchEmissionsTable, fetchEmissionsWeekly } from "@/lib/supabase-queries";
 import { EMISSION_FACTORS } from "@/lib/carbon-calculator";
 
 export default function EmissionsPage() {
@@ -14,8 +14,15 @@ export default function EmissionsPage() {
   const [chartData, setChartData] = useState([]);
 
   useEffect(() => {
-    setTableData(getMockEmissionsTable());
-    setChartData(getMockEmissionsWeekly());
+    async function loadData() {
+      const [table, weekly] = await Promise.all([
+        fetchEmissionsTable(),
+        fetchEmissionsWeekly(),
+      ]);
+      setTableData(table);
+      setChartData(weekly);
+    }
+    loadData();
   }, []);
 
   const totalCO2 = tableData.reduce((sum, row) => sum + row.total_co2, 0);

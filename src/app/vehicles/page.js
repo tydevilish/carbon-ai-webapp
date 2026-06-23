@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Car, User, CameraOff } from "lucide-react";
 import * as ort from "onnxruntime-web";
 import {
   CARBON_DB, CLASS_NAMES, VEHICLE_CLASSES, CLOTHES_CLASSES,
 } from "@/lib/constants";
-import { getMockVehicleEntries } from "@/lib/mock-data";
+import { fetchVehicleEntries } from "@/lib/supabase-queries";
 
 // ==========================================
 // Math utilities for detection
@@ -42,6 +42,26 @@ const applyNMS = (boxes, iouThreshold = 0.4) => {
 const getDistance = (p1, p2) =>
   Math.sqrt(Math.pow(p1.xc - p2.xc, 2) + Math.pow(p1.yc - p2.yc, 2));
 
+// ==========================================
+// EMA Smoothing for bounding boxes
+// ==========================================
+const SMOOTH_ALPHA = 0.35; // Lower = smoother but more lag, Higher = snappier
+
+function smoothBox(current, previous) {
+  if (!previous) return current;
+  return {
+    ...current,
+    xc: SMOOTH_ALPHA * current.xc + (1 - SMOOTH_ALPHA) * previous.xc,
+    yc: SMOOTH_ALPHA * current.yc + (1 - SMOOTH_ALPHA) * previous.yc,
+    w: SMOOTH_ALPHA * current.w + (1 - SMOOTH_ALPHA) * previous.w,
+    h: SMOOTH_ALPHA * current.h + (1 - SMOOTH_ALPHA) * previous.h,
+    x1: SMOOTH_ALPHA * current.x1 + (1 - SMOOTH_ALPHA) * previous.x1,
+    y1: SMOOTH_ALPHA * current.y1 + (1 - SMOOTH_ALPHA) * previous.y1,
+    x2: SMOOTH_ALPHA * current.x2 + (1 - SMOOTH_ALPHA) * previous.x2,
+    y2: SMOOTH_ALPHA * current.y2 + (1 - SMOOTH_ALPHA) * previous.y2,
+  };
+}
+
 export default function VehiclesPage() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -49,10 +69,13 @@ export default function VehiclesPage() {
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [accumulatedTotal, setAccumulatedTotal] = useState(0);
-  const [currentTrackedItems, setCurrentTrackedItems] = useState([]);
   const [facingMode, setFacingMode] = useState("environment");
   const [vehicleLog, setVehicleLog] = useState([]);
   const [cameraError, setCameraError] = useState(false);
+
+  // Use ref for tracked items to avoid re-renders that cause layout shift
+  const [displayItems, setDisplayItems] = useState([]);
+  const displayUpdateTimer = useRef(null);
 
   const modelRef = useRef(null);
   const isDetecting = useRef(false);
@@ -60,10 +83,16 @@ export default function VehiclesPage() {
   const nextTrackId = useRef(1);
   const activeTracks = useRef([]);
   const countedHistory = useRef(new Set());
+  // Store smoothed positions for each tracked ID
+  const smoothedPositions = useRef({});
 
   useEffect(() => {
-    // Load mock vehicle log
-    setVehicleLog(getMockVehicleEntries());
+    // Load vehicle log from Supabase
+    async function loadVehicleLog() {
+      const data = await fetchVehicleEntries();
+      setVehicleLog(data);
+    }
+    loadVehicleLog();
 
     const loadModels = async () => {
       try {
@@ -112,10 +141,20 @@ export default function VehiclesPage() {
     setAccumulatedTotal(0);
     countedHistory.current.clear();
     activeTracks.current = [];
+    smoothedPositions.current = {};
   };
 
+  // Throttled display update — only update React state every 500ms to prevent layout thrashing
+  const scheduleDisplayUpdate = useCallback((items) => {
+    if (displayUpdateTimer.current) return; // already scheduled
+    displayUpdateTimer.current = setTimeout(() => {
+      setDisplayItems([...items]);
+      displayUpdateTimer.current = null;
+    }, 500);
+  }, []);
+
   // ==========================================
-  // Render loop — draw detection boxes
+  // Render loop — draw detection boxes (uses smoothed positions)
   // ==========================================
   const renderLoop = () => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -153,7 +192,7 @@ export default function VehiclesPage() {
       ctx.fillText(box.item, x + 10, y - 7);
     });
 
-    // Draw persons/vehicles
+    // Draw persons/vehicles (using smoothed positions)
     targets.forEach((target) => {
       const x = target.x1 * scaleX, y = target.y1 * scaleY, w = target.w * scaleX, h = target.h * scaleY;
       const isVehicle = VEHICLE_CLASSES.includes(target.item);
@@ -177,7 +216,7 @@ export default function VehiclesPage() {
   };
 
   // ==========================================
-  // AI detection loop
+  // AI detection loop — with EMA smoothing
   // ==========================================
   const runAILoop = async () => {
     if (!videoRef.current || !hiddenCanvasRef.current || !modelRef.current) return;
@@ -242,8 +281,8 @@ export default function VehiclesPage() {
       let currentTargets = applyNMS(rawTargets, 0.4);
       let currentClothes = applyNMS(rawClothes, 0.4);
 
-      // Tracking
-      const MAX_DISTANCE = 150;
+      // Tracking with increased distance threshold for vehicles
+      const MAX_DISTANCE = 180;
       let updatedTracks = [];
 
       currentTargets.forEach((target) => {
@@ -270,8 +309,33 @@ export default function VehiclesPage() {
         } else {
           target.id = nextTrackId.current++;
         }
+
+        // Apply EMA smoothing
+        const prevSmoothed = smoothedPositions.current[target.id];
+        const smoothed = smoothBox(target, prevSmoothed);
+        smoothedPositions.current[target.id] = smoothed;
+
+        // Use smoothed values for rendering
+        target.xc = smoothed.xc;
+        target.yc = smoothed.yc;
+        target.w = smoothed.w;
+        target.h = smoothed.h;
+        target.x1 = smoothed.x1;
+        target.y1 = smoothed.y1;
+        target.x2 = smoothed.x2;
+        target.y2 = smoothed.y2;
+
         updatedTracks.push(target);
       });
+
+      // Clean up smoothed positions for IDs that no longer exist
+      const activeIds = new Set(updatedTracks.map((t) => t.id));
+      Object.keys(smoothedPositions.current).forEach((id) => {
+        if (!activeIds.has(Number(id))) {
+          delete smoothedPositions.current[id];
+        }
+      });
+
       activeTracks.current = updatedTracks;
 
       // Associate clothing with persons/vehicles
@@ -316,7 +380,9 @@ export default function VehiclesPage() {
       if (newCarbonToAdd > 0) setAccumulatedTotal((prev) => prev + newCarbonToAdd);
 
       latestUIData.current = { targets: updatedTracks, clothes: currentClothes };
-      setCurrentTrackedItems([...updatedTracks]);
+
+      // Throttled React state update for sidebar display
+      scheduleDisplayUpdate(updatedTracks);
     } catch (e) {
       console.error(e);
     } finally {
@@ -388,7 +454,7 @@ export default function VehiclesPage() {
           </div>
         </div>
 
-        {/* Sidebar Panel */}
+        {/* Sidebar Panel — fixed height with contain to prevent layout shift */}
         <div className="camera-sidebar">
           {/* Carbon Accumulator */}
           <div className="widget-card" style={{ background: "linear-gradient(135deg, #1e3a5f, #0f172a)", color: "white" }}>
@@ -399,19 +465,19 @@ export default function VehiclesPage() {
             </div>
           </div>
 
-          {/* Detected Entities */}
-          <div className="widget-card">
+          {/* Detected Entities — fixed height container */}
+          <div className="widget-card" style={{ contain: "layout style" }}>
             <div className="widget-header">
               <h3 className="widget-title">Detected Entities</h3>
-              <span style={{ fontSize: "12px", color: "#64748b" }}>{currentTrackedItems.length} active</span>
+              <span style={{ fontSize: "12px", color: "#64748b" }}>{displayItems.length} active</span>
             </div>
-            <div className="detection-list">
-              {currentTrackedItems.length === 0 ? (
+            <div className="detection-list" style={{ minHeight: "200px", maxHeight: "300px" }}>
+              {displayItems.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "24px", color: "#94a3b8", fontStyle: "italic", fontSize: "13px" }}>
                   No movement detected...
                 </div>
               ) : (
-                currentTrackedItems.map((usr) => {
+                displayItems.map((usr) => {
                   const isVehicle = VEHICLE_CLASSES.includes(usr.item);
                   return (
                     <div key={usr.id} className="detection-item">
@@ -437,8 +503,8 @@ export default function VehiclesPage() {
             </div>
           </div>
 
-          {/* Vehicle Log from DB */}
-          <div className="widget-card">
+          {/* Vehicle Log from DB — no license plates */}
+          <div className="widget-card" style={{ contain: "layout style" }}>
             <div className="widget-header">
               <h3 className="widget-title">Recent Vehicle Log</h3>
             </div>
@@ -446,11 +512,13 @@ export default function VehiclesPage() {
               {vehicleLog.map((entry) => (
                 <div key={entry.id} className="detection-item">
                   <div className="detection-main">
-                    <span className="detection-id detection-vehicle">{entry.plate}</span>
+                    <span className="detection-id detection-vehicle" style={{ textTransform: "capitalize" }}>
+                      {entry.type}
+                    </span>
                     <span style={{ fontSize: "11px", color: "#94a3b8" }}>{entry.time}</span>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", marginTop: "4px" }}>
-                    <span style={{ fontSize: "11px", color: "#64748b", textTransform: "capitalize" }}>{entry.type} • {entry.location}</span>
+                    <span style={{ fontSize: "11px", color: "#64748b" }}>{entry.location}</span>
                     <span className="detection-carbon">+{entry.co2} kg CO₂</span>
                   </div>
                 </div>

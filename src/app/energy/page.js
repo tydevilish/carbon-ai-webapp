@@ -6,7 +6,7 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
-import { getMockEnergyDetail } from "@/lib/mock-data";
+import { fetchEnergyDetail } from "@/lib/supabase-queries";
 import {
   calculateElectricityCO2, calculateWaterCO2, calculateWasteCO2,
   COST_FACTORS,
@@ -16,7 +16,11 @@ export default function EnergyPage() {
   const [energyData, setEnergyData] = useState([]);
 
   useEffect(() => {
-    setEnergyData(getMockEnergyDetail());
+    async function loadData() {
+      const data = await fetchEnergyDetail();
+      setEnergyData(data);
+    }
+    loadData();
   }, []);
 
   // Calculate totals

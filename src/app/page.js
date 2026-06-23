@@ -12,16 +12,16 @@ import CarbonTips from "@/components/dashboard/CarbonTips";
 import ForecastChart from "@/components/dashboard/ForecastChart";
 
 import {
-  getMockSummary,
-  getMockEmissionsWeekly,
-  getMockEmissionsMonthly,
-  getMockBreakdown,
-  getMockEnergyTrends,
-  getMockVehicleEntries,
-  getMockEntryStats,
-  getMockForecast,
-  getMockTips,
-} from "@/lib/mock-data";
+  fetchDashboardSummary,
+  fetchEmissionsWeekly,
+  fetchEmissionsMonthly,
+  fetchBreakdown,
+  fetchEnergyTrends,
+  fetchVehicleEntries,
+  fetchEntryStats,
+  fetchForecast,
+  fetchTips,
+} from "@/lib/supabase-queries";
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState(null);
@@ -35,24 +35,42 @@ export default function DashboardPage() {
   const [tips, setTips] = useState([]);
 
   useEffect(() => {
-    // Load data — uses mock data now, will switch to Supabase when connected
     loadDashboardData();
   }, []);
 
   async function loadDashboardData() {
     try {
-      // TODO: Replace with Supabase queries when connected
-      // const { data, error } = await supabase.from('carbon_emissions').select('*')
+      const [
+        summaryData,
+        weeklyData,
+        monthlyData,
+        breakdownData,
+        trendsData,
+        vehiclesData,
+        statsData,
+        forecastData,
+        tipsData,
+      ] = await Promise.all([
+        fetchDashboardSummary(),
+        fetchEmissionsWeekly(),
+        fetchEmissionsMonthly(),
+        fetchBreakdown(),
+        fetchEnergyTrends(),
+        fetchVehicleEntries(),
+        fetchEntryStats(),
+        fetchForecast(),
+        Promise.resolve(fetchTips()),
+      ]);
 
-      setSummary(getMockSummary());
-      setEmissionsWeekly(getMockEmissionsWeekly());
-      setEmissionsMonthly(getMockEmissionsMonthly());
-      setBreakdown(getMockBreakdown());
-      setEnergyTrends(getMockEnergyTrends());
-      setVehicleEntries(getMockVehicleEntries());
-      setEntryStats(getMockEntryStats());
-      setForecast(getMockForecast());
-      setTips(getMockTips());
+      setSummary(summaryData);
+      setEmissionsWeekly(weeklyData);
+      setEmissionsMonthly(monthlyData);
+      setBreakdown(breakdownData);
+      setEnergyTrends(trendsData);
+      setVehicleEntries(vehiclesData);
+      setEntryStats(statsData);
+      setForecast(forecastData);
+      setTips(tipsData);
     } catch (err) {
       console.error("Failed to load dashboard data:", err);
     }

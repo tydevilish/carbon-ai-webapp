@@ -578,6 +578,27 @@ body {
   background: rgba(234, 179, 8, 0.85);
 }
 
+/* Camera preview badge — small live indicator on dashboard */
+.camera-preview-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 5;
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 .camera-log {
   flex: 1;
   display: flex;
@@ -900,10 +921,13 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  contain: layout style;
+  will-change: contents;
 }
 
 .camera-sidebar .widget-card {
   flex: none;
+  contain: layout style;
 }
 
 .detection-list {
@@ -911,7 +935,12 @@ body {
   flex-direction: column;
   gap: 8px;
   max-height: 400px;
+  min-height: 100px;
   overflow-y: auto;
+  overflow-x: hidden;
+  contain: layout style;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100,116,139,0.3) transparent;
 }
 
 .detection-item {
