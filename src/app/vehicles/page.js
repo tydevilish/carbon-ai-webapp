@@ -85,6 +85,8 @@ export default function VehiclesPage() {
   const countedHistory = useRef(new Set());
   // Store smoothed positions for each tracked ID
   const smoothedPositions = useRef({});
+  // Track which IDs have already been saved to DB
+  const savedToDBRef = useRef(new Set());
 
   useEffect(() => {
     // Load vehicle log from Supabase
@@ -142,6 +144,53 @@ export default function VehiclesPage() {
     countedHistory.current.clear();
     activeTracks.current = [];
     smoothedPositions.current = {};
+    savedToDBRef.current.clear();
+  };
+
+  // ==========================================
+  // Save detections to database (fire-and-forget)
+  // ==========================================
+  const saveDetectionToDB = (target) => {
+    const isVehicle = VEHICLE_CLASSES.includes(target.item);
+
+    // Save to detection_logs
+    fetch('/api/detection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        object_type: isVehicle ? 'vehicle' : 'person',
+        object_class: target.item,
+        carbon_kg: CARBON_DB[target.item] || 0,
+        track_id: target.id,
+        camera_id: 1,
+      }),
+    }).catch(err => console.error('Failed to save detection:', err));
+
+    // If vehicle, also save to vehicle_entries & carbon_emissions
+    if (isVehicle) {
+      fetch('/api/vehicles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vehicle_type: target.item,
+          detected_at: new Date().toISOString(),
+          camera_id: 1,
+          carbon_kg: CARBON_DB[target.item] || 0,
+          direction: 'entry',
+        }),
+      }).catch(err => console.error('Failed to save vehicle entry:', err));
+
+      fetch('/api/emissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: new Date().toISOString().split('T')[0],
+          source_type: 'vehicle',
+          amount_kg: CARBON_DB[target.item] || 0,
+          cost_baht: 0,
+        }),
+      }).catch(err => console.error('Failed to save emission:', err));
+    }
   };
 
   // Throttled display update — only update React state every 500ms to prevent layout thrashing
@@ -360,13 +409,31 @@ export default function VehiclesPage() {
         }
       });
 
-      // Accumulate carbon
+      // Accumulate carbon & save to DB
       let newCarbonToAdd = 0;
       updatedTracks.forEach((target) => {
         const targetUniqueKey = `ID_${target.id}_base`;
         if (!countedHistory.current.has(targetUniqueKey)) {
           countedHistory.current.add(targetUniqueKey);
           newCarbonToAdd += CARBON_DB[target.item] || 0;
+
+          // Save to database (once per tracked entity)
+          if (!savedToDBRef.current.has(target.id)) {
+            savedToDBRef.current.add(target.id);
+            saveDetectionToDB(target);
+
+            // Add to local vehicle log for immediate UI feedback
+            if (VEHICLE_CLASSES.includes(target.item)) {
+              setVehicleLog((prev) => [{
+                id: `live_${target.id}`,
+                type: target.item,
+                time: new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
+                location: "Camera 1",
+                co2: CARBON_DB[target.item] || 0,
+                direction: "entry",
+              }, ...prev].slice(0, 10));
+            }
+          }
         }
         target.items.forEach((itemName) => {
           const itemUniqueKey = `ID_${target.id}_${itemName}`;

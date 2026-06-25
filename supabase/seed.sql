@@ -82,9 +82,11 @@ CREATE POLICY "Allow read access" ON energy_usage FOR SELECT USING (true);
 CREATE POLICY "Allow read access" ON detection_logs FOR SELECT USING (true);
 CREATE POLICY "Allow read access" ON cameras FOR SELECT USING (true);
 
--- Allow insert for anon (for camera detection logging)
+-- Allow insert for anon (for camera detection logging & data entry)
 CREATE POLICY "Allow insert" ON detection_logs FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow insert" ON vehicle_entries FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow insert" ON carbon_emissions FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow insert" ON energy_usage FOR INSERT WITH CHECK (true);
 
 -- ========================================
 -- Seed Data (30 days of mock data)
