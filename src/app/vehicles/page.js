@@ -43,24 +43,9 @@ const getDistance = (p1, p2) =>
   Math.sqrt(Math.pow(p1.xc - p2.xc, 2) + Math.pow(p1.yc - p2.yc, 2));
 
 // ==========================================
-// EMA Smoothing for bounding boxes
+// Velocity-based prediction utilities
 // ==========================================
-const SMOOTH_ALPHA = 0.35; // Lower = smoother but more lag, Higher = snappier
-
-function smoothBox(current, previous) {
-  if (!previous) return current;
-  return {
-    ...current,
-    xc: SMOOTH_ALPHA * current.xc + (1 - SMOOTH_ALPHA) * previous.xc,
-    yc: SMOOTH_ALPHA * current.yc + (1 - SMOOTH_ALPHA) * previous.yc,
-    w: SMOOTH_ALPHA * current.w + (1 - SMOOTH_ALPHA) * previous.w,
-    h: SMOOTH_ALPHA * current.h + (1 - SMOOTH_ALPHA) * previous.h,
-    x1: SMOOTH_ALPHA * current.x1 + (1 - SMOOTH_ALPHA) * previous.x1,
-    y1: SMOOTH_ALPHA * current.y1 + (1 - SMOOTH_ALPHA) * previous.y1,
-    x2: SMOOTH_ALPHA * current.x2 + (1 - SMOOTH_ALPHA) * previous.x2,
-    y2: SMOOTH_ALPHA * current.y2 + (1 - SMOOTH_ALPHA) * previous.y2,
-  };
-}
+const VELOCITY_EMA = 0.5; // Smoothing factor for velocity updates (0-1)
 
 export default function VehiclesPage() {
   const videoRef = useRef(null);
@@ -83,10 +68,16 @@ export default function VehiclesPage() {
   const nextTrackId = useRef(1);
   const activeTracks = useRef([]);
   const countedHistory = useRef(new Set());
-  // Store smoothed positions for each tracked ID
-  const smoothedPositions = useRef({});
   // Track which IDs have already been saved to DB
   const savedToDBRef = useRef(new Set());
+
+  // === Velocity-based prediction & render interpolation ===
+  // Full history per track: position, velocity, metadata, timestamp
+  const trackHistoryRef = useRef({});
+  // Smoothly interpolated rendered positions (updated every render frame)
+  const renderedPositionsRef = useRef({});
+  // Timestamp of last render frame for frame-rate-independent lerp
+  const lastRenderTimeRef = useRef(performance.now());
 
   useEffect(() => {
     // Load vehicle log from Supabase
@@ -143,7 +134,8 @@ export default function VehiclesPage() {
     setAccumulatedTotal(0);
     countedHistory.current.clear();
     activeTracks.current = [];
-    smoothedPositions.current = {};
+    trackHistoryRef.current = {};
+    renderedPositionsRef.current = {};
     savedToDBRef.current.clear();
   };
 
@@ -203,7 +195,7 @@ export default function VehiclesPage() {
   }, []);
 
   // ==========================================
-  // Render loop — draw detection boxes (uses smoothed positions)
+  // Render loop — velocity-predicted interpolation at 60fps
   // ==========================================
   const renderLoop = () => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -226,11 +218,66 @@ export default function VehiclesPage() {
     const scaleY = canvas.height / 640;
     const lineWidth = Math.max(3, canvas.width / 200);
 
-    const { targets, clothes } = latestUIData.current;
+    const now = performance.now();
+    const renderDt = (now - lastRenderTimeRef.current) / 1000;
+    lastRenderTimeRef.current = now;
 
-    // Draw clothing (green)
+    const { clothes } = latestUIData.current;
+    const history = trackHistoryRef.current;
+    const rendered = renderedPositionsRef.current;
+
+    // Frame-rate-independent lerp: higher responsiveness = snappier tracking
+    const responsiveness = 18;
+    const lerpFactor = 1 - Math.exp(-responsiveness * renderDt);
+
+    // --- Update interpolated positions for every tracked target ---
+    const activeRenderIds = new Set();
+    Object.entries(history).forEach(([idStr, track]) => {
+      const id = Number(idStr);
+      activeRenderIds.add(id);
+
+      // Predict current position using velocity
+      const elapsed = (now - track.timestamp) / 1000;
+      const predTime = Math.min(elapsed, 0.4); // cap prediction window
+      const predXc = track.xc + (track.vx || 0) * predTime;
+      const predYc = track.yc + (track.vy || 0) * predTime;
+
+      if (!rendered[id]) {
+        // First frame: snap to predicted position
+        rendered[id] = { xc: predXc, yc: predYc, w: track.w, h: track.h };
+      } else {
+        // Smooth interpolation toward predicted position
+        rendered[id].xc += (predXc - rendered[id].xc) * lerpFactor;
+        rendered[id].yc += (predYc - rendered[id].yc) * lerpFactor;
+        rendered[id].w  += (track.w - rendered[id].w) * lerpFactor;
+        rendered[id].h  += (track.h - rendered[id].h) * lerpFactor;
+      }
+    });
+
+    // Remove rendered entries for disappeared tracks
+    Object.keys(rendered).forEach((idStr) => {
+      if (!activeRenderIds.has(Number(idStr))) delete rendered[idStr];
+    });
+
+    // --- Draw clothing (green) with offset correction ---
     clothes.forEach((box) => {
-      const x = box.x1 * scaleX, y = box.y1 * scaleY, w = box.w * scaleX, h = box.h * scaleY;
+      let offsetX = 0, offsetY = 0;
+      // Shift clothing boxes by the same delta as their parent target's interpolation
+      Object.entries(history).forEach(([idStr, track]) => {
+        const id = Number(idStr);
+        const rp = rendered[id];
+        if (rp &&
+            box.xc >= (track.xc - track.w / 2) && box.xc <= (track.xc + track.w / 2) &&
+            box.yc >= (track.yc - track.h / 2) && box.yc <= (track.yc + track.h / 2)) {
+          offsetX = (rp.xc - track.xc) * scaleX;
+          offsetY = (rp.yc - track.yc) * scaleY;
+        }
+      });
+
+      const x = box.x1 * scaleX + offsetX;
+      const y = box.y1 * scaleY + offsetY;
+      const w = box.w * scaleX;
+      const h = box.h * scaleY;
       ctx.strokeStyle = "#10b981";
       ctx.lineWidth = lineWidth;
       ctx.strokeRect(x, y, w, h);
@@ -241,18 +288,25 @@ export default function VehiclesPage() {
       ctx.fillText(box.item, x + 10, y - 7);
     });
 
-    // Draw persons/vehicles (using smoothed positions)
-    targets.forEach((target) => {
-      const x = target.x1 * scaleX, y = target.y1 * scaleY, w = target.w * scaleX, h = target.h * scaleY;
-      const isVehicle = VEHICLE_CLASSES.includes(target.item);
+    // --- Draw persons/vehicles using interpolated positions ---
+    Object.entries(history).forEach(([idStr, track]) => {
+      const id = Number(idStr);
+      const rp = rendered[id];
+      if (!rp) return;
+
+      const x = (rp.xc - rp.w / 2) * scaleX;
+      const y = (rp.yc - rp.h / 2) * scaleY;
+      const w = rp.w * scaleX;
+      const h = rp.h * scaleY;
+      const isVehicle = VEHICLE_CLASSES.includes(track.item);
       const color = isVehicle ? "#3b82f6" : "#eab308";
 
       ctx.strokeStyle = color;
       ctx.lineWidth = lineWidth;
       ctx.strokeRect(x, y, w, h);
 
-      const itemsList = target.items.length > 0 ? ` [${target.items.join(",")}]` : "";
-      const text = `${target.item.toUpperCase()} ID#${target.id} (+${target.carbon.toFixed(1)})${itemsList}`;
+      const itemsList = track.items && track.items.length > 0 ? ` [${track.items.join(",")}]` : "";
+      const text = `${track.item.toUpperCase()} ID#${track.id} (+${track.carbon.toFixed(1)})${itemsList}`;
 
       ctx.fillStyle = color;
       ctx.fillRect(x, y - 30, ctx.measureText(text).width + 20, 30);
@@ -330,8 +384,8 @@ export default function VehiclesPage() {
       let currentTargets = applyNMS(rawTargets, 0.4);
       let currentClothes = applyNMS(rawClothes, 0.4);
 
-      // Tracking with increased distance threshold for vehicles
-      const MAX_DISTANCE = 180;
+      // Tracking with generous distance threshold for fast movement
+      const MAX_DISTANCE = 220;
       let updatedTracks = [];
 
       currentTargets.forEach((target) => {
@@ -359,30 +413,7 @@ export default function VehiclesPage() {
           target.id = nextTrackId.current++;
         }
 
-        // Apply EMA smoothing
-        const prevSmoothed = smoothedPositions.current[target.id];
-        const smoothed = smoothBox(target, prevSmoothed);
-        smoothedPositions.current[target.id] = smoothed;
-
-        // Use smoothed values for rendering
-        target.xc = smoothed.xc;
-        target.yc = smoothed.yc;
-        target.w = smoothed.w;
-        target.h = smoothed.h;
-        target.x1 = smoothed.x1;
-        target.y1 = smoothed.y1;
-        target.x2 = smoothed.x2;
-        target.y2 = smoothed.y2;
-
         updatedTracks.push(target);
-      });
-
-      // Clean up smoothed positions for IDs that no longer exist
-      const activeIds = new Set(updatedTracks.map((t) => t.id));
-      Object.keys(smoothedPositions.current).forEach((id) => {
-        if (!activeIds.has(Number(id))) {
-          delete smoothedPositions.current[id];
-        }
       });
 
       activeTracks.current = updatedTracks;
@@ -447,6 +478,40 @@ export default function VehiclesPage() {
       if (newCarbonToAdd > 0) setAccumulatedTotal((prev) => prev + newCarbonToAdd);
 
       latestUIData.current = { targets: updatedTracks, clothes: currentClothes };
+
+      // --- Compute velocities & update track history for render interpolation ---
+      const aiTimestamp = performance.now();
+      const activeHistoryIds = new Set();
+      updatedTracks.forEach((target) => {
+        activeHistoryIds.add(target.id);
+        const prev = trackHistoryRef.current[target.id];
+        let vx = 0, vy = 0;
+        if (prev) {
+          const dt = (aiTimestamp - prev.timestamp) / 1000;
+          if (dt > 0.01 && dt < 2) {
+            const rawVx = (target.xc - prev.xc) / dt;
+            const rawVy = (target.yc - prev.yc) / dt;
+            // EMA-smoothed velocity to reduce jitter
+            vx = VELOCITY_EMA * rawVx + (1 - VELOCITY_EMA) * (prev.vx || 0);
+            vy = VELOCITY_EMA * rawVy + (1 - VELOCITY_EMA) * (prev.vy || 0);
+          }
+        }
+        trackHistoryRef.current[target.id] = {
+          xc: target.xc, yc: target.yc,
+          vx, vy,
+          w: target.w, h: target.h,
+          item: target.item, items: [...target.items],
+          carbon: target.carbon, id: target.id, conf: target.conf,
+          timestamp: aiTimestamp,
+        };
+      });
+      // Remove stale tracks
+      Object.keys(trackHistoryRef.current).forEach((id) => {
+        if (!activeHistoryIds.has(Number(id))) {
+          delete trackHistoryRef.current[id];
+          delete renderedPositionsRef.current[id];
+        }
+      });
 
       // Throttled React state update for sidebar display
       scheduleDisplayUpdate(updatedTracks);
